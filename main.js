@@ -3,18 +3,20 @@ const {MongoClient} = require('mongodb');
 const fs = require('fs');
 const readline = require('readline').createInterface({input: process.stdin, output: process.stdout});
 const {Storage} = require('@google-cloud/storage');
+const sizeOf = require('image-size');
 
 const types = ['archived-audio', 'archived-image', 'software', 'screenshot', 'physical'];
 const typesWithUpscaledVersions = ['archived-image', 'software', 'screenshot'];
 const typesWithOriginalSources = ['archived-audio', 'archived-image'];
 const typesWithAURL = ['archived-audio', 'archived-image', 'software', 'screenshot'];
 const typesWithCreators = ['software'];
-const typesWithMultipleFiles = ['physical', 'software']
+const typesWithMultipleFiles = ['physical', 'software'];
+const typesWithDisplayDimensions = ['archived-image', 'software', 'screenshot', 'phyisical'];
 
 async function catalog_items() {
 
     // read items in staging directory
-    let stagedItems = fs.readdirSync(process.env.STAGING_PATH);
+    let stagedItems = fs.readdirSync(process.env.STAGING_PATH).filter(itemName => itemName !== '.gitignore' && itemName !== 'desktop.ini');
     if(stagedItems.length === 0) {
         console.log(redify('STAGIN DIRECTORY IS EMPTY; NO ITEMS TO BE CATALOGED'));
         process.exit();
@@ -51,6 +53,13 @@ async function catalog_items() {
                 answer = await new Promise(resolve => readline.question(magentify('TYPE (' + types.toString() + '): '), answer => resolve(answer)));
             }
         }));
+
+        // get display dimensions
+        if(typesWithDisplayDimensions.includes(data.type)) {
+            let dimensions = sizeOf(process.env.STAGING_PATH + '/' + data.name);
+            data.displayHeight = dimensions.height;
+            data.displayWidth = dimensions.width;
+        }
 
         // pull in all filenames for items with multiple files
         if(typesWithMultipleFiles.includes(data.type)) {
@@ -129,6 +138,24 @@ async function catalog_items() {
             return resolve(answer);
         }));
 
+        // prompt for tags
+        data.tags = [];
+        let enteringTags = true;
+        while(enteringTags) {
+            data.tags.push(await new Promise(resolve => readline.question(magentify('TAG: '), answer => resolve(answer))));
+            enteringTags = await new Promise(resolve => readline.question(magentify('ENTER ANOTHER TAG? (y/n):'), async answer => {
+                while(true) {
+                    if(answer.toLowerCase().trim() === 'y' || answer.toLowerCase().trim() === 'yes') 
+                        return resolve(true);
+                    else if(answer.toLowerCase().trim() === 'n' || answer.toLowerCase().trim() === 'no')
+                        return resolve(false);
+                    answer = await new Promise(resolve => readline.question(magentify('(y/n): '), answer => resolve(answer)));
+                }
+            }));
+        }
+
+        
+
         // verify that all data looks correct
         let redoItem = await new Promise(resolve => readline.question(cyanify('FINAL DATA TO BE ADDED:\n' + JSON.stringify(data, null, 4)) + magentify('\nDOES THIS LOOK CORRECT? (y/n): '), async answer => {
             while(true) {
@@ -174,7 +201,7 @@ async function catalog_items() {
         } else {
             console.log(cyanify('REDOING ITEM FROM BEGINNING...'));
         }
-        stagedItems = fs.readdirSync(process.env.STAGING_PATH);
+        stagedItems = fs.readdirSync(process.env.STAGING_PATH).filter(itemName => itemName !== '.gitignore' && itemName !== 'desktop.ini');
     }
 
     console.log(cyanify('ALL ITEMS CALATOGED!! YAY!!! (´ω｀^=)~'));
