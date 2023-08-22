@@ -1,0 +1,37 @@
+tagging/description notes for cataloged images
+
+tags:
+primary colors (max two)
+basic visual descriptors
+keep descriptors singular, no plurals ("wing" instead of "wings")
+specific tags:
+	"animated",
+	"88x31",
+	"cute",
+	"weird",
+	"puff",
+	"blob",
+	"animal" and animal name,
+	etc
+image category (what was it used for?):
+	"background",
+	"avatar",
+	"ad",
+	"icon",
+	"blinkie",
+	"website",
+	"webring",
+	"button",
+	"banner",
+	etc
+actions:
+	"spinning",
+	"blushing",
+	"flying",
+	etc
+
+description:
+general visual description of image
+for specific website-related images, (button/banner ads, screenshots, etc), include website title, or URL if title isn't available
+for specific webring-related images, do the same as for website-related images (include title, use webring's homepage URL if title isn't available)
+don't specify things like "animated gif of...", "screenshot of...", only need to describe the image directly

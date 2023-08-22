@@ -18,26 +18,62 @@ let mongoClient = null;
 let mongoCollection = null;
 let gcsBucket = null;
 
-async function initializeConnections() {
+// begin program execution
+main();
 
-    // initialize database
-    mongoClient = new MongoClient(process.env.MONGODB_URI);
-    await mongoClient.connect();
-    mongoCollection = mongoClient.db(process.env.MONGODB_DATABASE).collection(process.env.MONGODB_COLLECTION);
+// main program loop
+async function main() {
 
-    // initialize gcs
-    let gcs = new Storage();
-    gcsBucket = gcs.bucket(process.env.GCS_BUCKETNAME);
+    // start program
+    let running = true;
+    while(running) {
 
+        // prompt for action
+        let action = await new Promise(resolve => readline.question(magentify('ACTION: '), async answer => {
+            while(true) {
+                if(actions.includes(answer))
+                    return resolve(answer);
+                answer = await new Promise(resolve => readline.question(magentify('ACTION (' + actions.toString().replaceAll(',', ', ') + '): '), answer => resolve(answer)));
+            }
+        }));
+
+        // initialize connections
+        initializeConnections();
+
+        // execute action
+        if(action === 'catalog')
+            await catalog_items();
+        else if(action === 'delete')
+            await delete_items();
+        else if(action === 'exit')
+            break;
+
+        // prompt to continue
+        running = await new Promise(resolve => readline.question(magentify('CONTINUE WITH ANOTHER ACTION? (y/n): '), async answer => {
+            while(true) {
+                if(answer.toLowerCase().trim() === 'y' || answer.toLowerCase().trim() === 'yes') 
+                    return resolve(true);
+                else if(answer.toLowerCase().trim() === 'n' || answer.toLowerCase().trim() === 'no')
+                    return resolve(false);
+                answer = await new Promise(resolve => readline.question(magentify('(y/n): '), answer => resolve(answer)));
+            }
+        }));
+    }
+
+    // end the program's execution
+    console.log(cyanify('BAII~!!! ⸜(｡> ᵕ < )⸝'));
+    await mongoClient.close();
+    return;
 }
 
+// function to catalog items
 async function catalog_items() {
 
     // read items in staging directory
     let stagedItems = fs.readdirSync(process.env.STAGING_PATH).filter(itemName => itemName !== '.gitignore' && itemName !== 'desktop.ini');
     if(stagedItems.length === 0) {
         console.log(redify('STAGING DIRECTORY IS EMPTY; NO ITEMS TO BE CATALOGED'));
-        process.exit();
+        return;
     }
 
     while(stagedItems.length > 0) {
@@ -52,7 +88,7 @@ async function catalog_items() {
         // check that name is valid
         if(!data.name) {
             console.log(redify('ITEM NAME WAS READ AS ' + data.name + ', CHECK FILES IN STAGING DIRECTORY'));
-            process.exit();
+            return;
         }
 
         // prompt for data type
@@ -75,7 +111,7 @@ async function catalog_items() {
         if(typesWithMultipleFiles.includes(data.type)) {
             if(!data.name.includes('-1.')) {
                 console.log(redify('INCORRECT NAMING CONVENTION FOR TYPE WITH MULTIPLE FILES; ' + data.name + ' AS THE FIRST ITEM DOES IS NOT PREFIXED WITH A "-1" BEFORE THE FILE EXTENSION'));
-                process.exit();
+                return;
             }
             data.filenames = stagedItems.filter(filename => data.name.substring(0, data.name.lastIndexOf('-')) === filename.substring(0, filename.lastIndexOf('-'))).sort();
         }
@@ -90,7 +126,7 @@ async function catalog_items() {
                 let upscaledFilename = stagedItems.find(upscaledFilename => upscaledFilename.indexOf(filename.substring(0, filename.lastIndexOf('.'))) === 0 && upscaledFilename.includes('-upscaled.'));
                 if(!upscaledFilename) {
                     console.log(redify('UPSCALED FILE MISSING FOR ' + filename + '; RECHECK FILES IN STAGING DIRECTORY'));
-                    process.exit();
+                    return;
                 }
                 upscaledFilenames.push(upscaledFilename);
             });
@@ -215,64 +251,10 @@ async function catalog_items() {
     console.log(cyanify('ALL ITEMS CALATOGED!! YAY!!! (´ω｀^=)~'));
 }
 
-function cyanify(string) {
-    return '\x1b[36m' + string + '\x1b[0m';
-}
-
-function magentify(string) {
-    return '\x1b[35m' + string + '\x1b[0m';
-}
-
-function redify(string) {
-    return '\x1b[31m' + string + '\x1b[0m';
-}
-
-async function main() {
-
-    // start program
-    let running = true;
-    while(running) {
-
-        // prompt for action
-        let action = await new Promise(resolve => readline.question(magentify('ACTION: '), async answer => {
-            while(true) {
-                if(actions.includes(answer))
-                    return resolve(answer);
-                answer = await new Promise(resolve => readline.question(magentify('ACTION (' + actions.toString().replaceAll(',', ', ') + '): '), answer => resolve(answer)));
-            }
-        }));
-
-        // initialize connections
-        initializeConnections();
-
-        // execute action
-        if(action === 'catalog')
-            await catalog_items();
-        else if(action === 'delete')
-            await delete_items();
-        else if(action === 'exit')
-            break;
-
-        // prompt to continue
-        running = await new Promise(resolve => readline.question(magentify('CONTINUE WITH ANOTHER ACTION? (y/n): '), async answer => {
-            while(true) {
-                if(answer.toLowerCase().trim() === 'y' || answer.toLowerCase().trim() === 'yes') 
-                    return resolve(true);
-                else if(answer.toLowerCase().trim() === 'n' || answer.toLowerCase().trim() === 'no')
-                    return resolve(false);
-                answer = await new Promise(resolve => readline.question(magentify('(y/n): '), answer => resolve(answer)));
-            }
-        }));
-    }
-
-    // end the program's execution
-    console.log(cyanify('BAII~!!! ⸜(｡> ᵕ < )⸝'));
-    await mongoClient.close();
-    process.exit();
-}
-
+// function to delete items
 async function delete_items() {
 
+    // enter item deletion loop
     let deleting = true;
     while(deleting) {
 
@@ -288,11 +270,16 @@ async function delete_items() {
             }
         }));
 
+        // fetch item's metadata
         console.log(cyanify('FETCHING ITEM...'));
         let item = await mongoCollection.findOne({_id: itemId});
+
+        // if an item with the given ID was found...
         let continuePrompt = null;
         if(item) {
             console.log(cyanify('ITEM FOUND!'));
+
+            // ...prompt to confirm item deletion
             let confirmDeletion = await new Promise(resolve => readline.question(magentify('DELETE ITEM "' + item.name + '"? (y/n): '), async answer => {
                 while(true) {
                     if(answer.toLowerCase().trim() === 'y' || answer.toLowerCase().trim() === 'yes') 
@@ -302,14 +289,22 @@ async function delete_items() {
                     answer = await new Promise(resolve => readline.question(magentify('(y/n): '), answer => resolve(answer)));
                 }
             }));
+
+            // if confirmed, proceed with deletion process
             if(confirmDeletion) {
+
+                // double-check item id
                 if(!itemId || !itemId.toString() || itemId.toString() === '/' || !itemId.toString().trim()) {
                     console.log(redify('ITEM ID WAS FOUND TO BE "' + itemId.toString() + '" RIGHT BEFORE DELETION, RECHECK PROGRAM CODE AND/OR ITEM ID'));
-                    process.exit();
+                    return;
                 }
+
+                // delete item metadata from database
                 console.log(cyanify('DELETING ITEM DATA...'));
                 await mongoCollection.deleteOne({_id: itemId});
                 console.log(cyanify('ITEM DATA SUCCESSFULLY DELETED!'));
+
+                // delete item's files from GCS
                 console.log(cyanify('DELETING ITEM FILES FROM GCS...'));
                 let gcsFiles = (await gcsBucket.getFiles({ prefix: itemId.toString() + '/' }))[0];
                 let numberOfDeletedFilesFromGcs = 0;
@@ -332,18 +327,27 @@ async function delete_items() {
                 }
                 await Promise.all(fileDeletionPromises);
                 console.log(cyanify(numberOfDeletedFilesFromGcs + ' FILE(S) SUCCESSFULLY DELETED FROM GCS!'));
+
+                // delete item's locally saved files
                 console.log(cyanify('DELETING ITEM FILES FROM LOCAL STORAGE...'));
                 let filesSavedLocally = fs.readdirSync(process.env.CATALOGED_PATH + itemId.toString());
                 fs.rmSync(process.env.CATALOGED_PATH + itemId.toString(), {recursive: true, force: true});
-                console.log(cyanify(filesSavedLocally.length + ' FILE(S) DELETED FROM LOCAL STORAGE SUCCESFULLY! ("' + filesSavedLocally.toString().replaceAll(',', '", "') + '")'));
+                console.log(cyanify(filesSavedLocally.length + ' FILE(S) SUCCESFULLY DELETED FROM LOCAL STORAGE! ("' + filesSavedLocally.toString().replaceAll(',', '", "') + '")'));
             }
+
+            // set continue prompt
             continuePrompt = magentify('CONTINUE WITH A NEW ITEM ID? (y/n): ');
         }
+
+        // else...
         else {
+
+            // ...tell user no item was found, and set continue prompt
             console.log(redify('NO ITEM WITH ID ' + itemId + ' WAS FOUND TO EXIST...'));
             continuePrompt = magentify('TRY AGAIN WITH A DIFFERENT ITEM ID? (y/n): ');
         }
 
+        // prompt to continue
         deleting = await new Promise(resolve => readline.question(continuePrompt, async answer => {
             while(true) {
                 if(answer.toLowerCase().trim() === 'y' || answer.toLowerCase().trim() === 'yes') 
@@ -356,4 +360,27 @@ async function delete_items() {
     }
 }
 
-main();
+// helper function to connect to mongodb and gcs
+async function initializeConnections() {
+
+    // initialize database
+    mongoClient = new MongoClient(process.env.MONGODB_URI);
+    await mongoClient.connect();
+    mongoCollection = mongoClient.db(process.env.MONGODB_DATABASE).collection(process.env.MONGODB_COLLECTION);
+
+    // initialize gcs
+    let gcs = new Storage();
+    gcsBucket = gcs.bucket(process.env.GCS_BUCKETNAME);
+
+}
+
+// helper functions to add color to command line text
+function cyanify(string) {
+    return '\x1b[36m' + string + '\x1b[0m';
+}
+function magentify(string) {
+    return '\x1b[35m' + string + '\x1b[0m';
+}
+function redify(string) {
+    return '\x1b[31m' + string + '\x1b[0m';
+}
